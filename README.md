@@ -1,6 +1,9 @@
 # Embedded-hal driver for Cirque Pinnacle Touchpad
 
+The crate adds embedded-hal support for Cirque Pinnacle Touchpads. This project is still very much a work-in-progress and is not guaranteed to work on all Pinnacle Touchpads. The examples have only been tested on the [TM040040 Trackpad] (specifically [TM040040-2024-302] on Mouser), which means features like scrolling, secondary tap and intellimouse have not been tested.
 
+[TM040040 Trackpad]: https://www.cirque.com/glidepoint-circle-trackpads
+[TM040040-2024-302]: https://www.mouser.com/ProductDetail/Cirque/TM040040-2024-302?qs=wd5RIQLrsJgMzmw571gvDw%3D%3D
 
 The examples are all tested on rp2040 tooling, which is described below.
 
