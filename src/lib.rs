@@ -1,11 +1,11 @@
+//! TODO: Add documentation
 #![no_std]
 
 use core::marker::PhantomData;
-use cortex_m::delay::Delay;
-use defmt::*;
-use defmt_rtt as _;
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::timer::CountDown;
+use fugit::{ExtU32, MicrosDurationU32};
 
 pub struct PinnacleTouchpad<S, P, D> {
     spi: S,
@@ -211,13 +211,18 @@ where
     D: Build,
     <D as Build>::Data: TouchpadData,
 {
-    pub fn build(
+    pub fn build<C>(
         self,
-        delay: &mut Delay,
-    ) -> Result<PinnacleTouchpad<S, P, <D as Build>::Data>, S::Error> {
+        delay: &mut C,
+    ) -> Result<PinnacleTouchpad<S, P, <D as Build>::Data>, S::Error>
+    where
+        C: CountDown,
+        MicrosDurationU32: Into<<C as CountDown>::Time>,
+    {
         let mut pinnacle = PinnacleTouchpad::new(self.spi, self.cs);
         pinnacle.write(STATUS1_ADDR, 0x00)?;
-        delay.delay_us(50);
+        delay.start(50.micros());
+        let _ = delay.wait();
         let feed_config2 = (self.swap_x_y as u8) << 7
             | (!self.glide_extend as u8) << 4
             | (!self.scroll as u8) << 4
@@ -266,9 +271,14 @@ where
     P: OutputPin,
     D: TouchpadData,
 {
-    pub fn clear_flags(&mut self, delay: &mut Delay) -> Result<(), S::Error> {
+    pub fn clear_flags<C>(&mut self, delay: &mut C) -> Result<(), S::Error>
+    where
+        C: CountDown,
+        MicrosDurationU32: Into<<C as CountDown>::Time>,
+    {
         let res = self.write(STATUS1_ADDR, 0x00);
-        delay.delay_us(50);
+        delay.start(50.micros());
+        let _ = delay.wait();
         res
     }
 
@@ -298,11 +308,11 @@ where
      */
 
     pub fn sample_rate(&mut self) -> Result<SampleRate, S::Error> {
-        defmt::todo!()
+        todo!()
     }
 
     pub fn set_sample_rate(&mut self, _sample_rate: SampleRate) -> Result<(), S::Error> {
-        defmt::todo!()
+        todo!()
     }
 
     pub fn z_idle(&mut self) -> Result<u8, S::Error> {
@@ -367,7 +377,8 @@ pub trait TouchpadData: private::Sealed {}
 impl TouchpadData for AbsoluteData {}
 impl TouchpadData for RelativeData {}
 
-#[derive(Copy, Clone, Format)]
+#[derive(Copy, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AbsoluteData {
     pub x: u16,
     pub y: u16,
@@ -391,7 +402,8 @@ where
     }
 }
 
-#[derive(Copy, Clone, Format)]
+#[derive(Copy, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct RelativeData {
     pub x: i16,
     pub y: i16,

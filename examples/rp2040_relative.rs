@@ -5,7 +5,7 @@ use bsp::hal::gpio::bank0::{Gpio21, Gpio9};
 use bsp::hal::gpio::{Interrupt, Pin, PullDownInput, PushPullOutput};
 use bsp::hal::pac::interrupt;
 use bsp::hal::spi::Enabled;
-use bsp::hal::{gpio, spi, Spi};
+use bsp::hal::{gpio, spi, Spi, Timer};
 use bsp::pac::SPI0;
 use bsp::{entry, pac};
 use cortex_m::delay::Delay;
@@ -27,7 +27,7 @@ type TouchpadSpi = Spi<Enabled, SPI0, 8>;
 type SpiCs = Pin<Gpio21, PushPullOutput>;
 
 static mut PINNACLE: Option<(
-    Delay,
+    Timer,
     TouchpadDrPin,
     PinnacleTouchpad<TouchpadSpi, SpiCs, RelativeData>,
 )> = None;
@@ -66,6 +66,7 @@ fn main() -> ! {
     let _pin1 = pins.tx1;
 
     let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
+    let timer = Timer::new(pac.TIMER, &mut pac.RESETS);
 
     let touchpad_irq = pins.rx1.into_mode::<PullDownInput>();
     // These are implicitly used by the spi driver if they are in the correct mode
@@ -88,7 +89,7 @@ fn main() -> ! {
     touchpad_irq.set_interrupt_enabled(Interrupt::EdgeHigh, true);
     let mut pinnacle = PinnacleTouchpadBuilder::new(spi, spi_cs)
         .relative_mode()
-        .build(&mut delay)
+        .build(&mut timer.count_down())
         .unwrap();
 
     let firmware_id_bytes = pinnacle.firmware_id().unwrap();
@@ -110,7 +111,7 @@ fn main() -> ! {
     pinnacle.set_z_idle(0x0A).unwrap(); // Set z-idle packet count to 5 (default is 30)
 
     unsafe {
-        PINNACLE = Some((delay, touchpad_irq, pinnacle));
+        PINNACLE = Some((timer, touchpad_irq, pinnacle));
         pac::NVIC::unmask(pac::Interrupt::IO_IRQ_BANK0);
     }
 
@@ -121,7 +122,7 @@ fn main() -> ! {
 
 #[interrupt]
 fn IO_IRQ_BANK0() {
-    let Some((delay, touchpad_irq, pinnacle)) = (unsafe { PINNACLE.as_mut() }) else {
+    let Some((timer, touchpad_irq, pinnacle)) = (unsafe { PINNACLE.as_mut() }) else {
         return;
     };
 
@@ -131,7 +132,7 @@ fn IO_IRQ_BANK0() {
 
     let data = pinnacle.read_relative().unwrap();
     touchpad_irq.clear_interrupt(Interrupt::EdgeHigh);
-    pinnacle.clear_flags(delay).unwrap();
+    pinnacle.clear_flags(&mut timer.count_down()).unwrap();
     defmt::info!("{:?}", data);
 }
 

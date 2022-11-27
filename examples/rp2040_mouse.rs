@@ -8,7 +8,7 @@ use bsp::hal::gpio::{Interrupt, Pin, PullDownInput, PushPullOutput};
 use bsp::hal::pac::interrupt;
 use bsp::hal::spi::Enabled;
 use bsp::hal::usb::UsbBus;
-use bsp::hal::{gpio, spi, Spi};
+use bsp::hal::{gpio, spi, Spi, Timer};
 use bsp::pac::SPI0;
 use bsp::{entry, pac};
 use cortex_m::delay::Delay;
@@ -36,7 +36,7 @@ type TouchpadSpi = Spi<Enabled, SPI0, 8>;
 type SpiCs = Pin<Gpio21, PushPullOutput>;
 
 static mut PINNACLE: Option<(
-    Delay,
+    Timer,
     TouchpadDrPin,
     PinnacleTouchpad<TouchpadSpi, SpiCs, RelativeData>,
 )> = None;
@@ -78,6 +78,7 @@ fn main() -> ! {
     let _pin1 = pins.tx1;
 
     let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
+    let timer = Timer::new(pac.TIMER, &mut pac.RESETS);
 
     // The bus that is used to manage the device and class below.
     let usb_bus = UsbBusAllocator::new(UsbBus::new(
@@ -134,7 +135,7 @@ fn main() -> ! {
     let mut pinnacle = PinnacleTouchpadBuilder::new(spi, spi_cs)
         .relative_mode()
         .calibrate()
-        .build(&mut delay)
+        .build(&mut timer.count_down())
         .unwrap();
 
     let firmware_id_bytes = pinnacle.firmware_id().unwrap();
@@ -156,7 +157,7 @@ fn main() -> ! {
     pinnacle.set_z_idle(0x0A).unwrap(); // Set z-idle packet count to 5 (default is 30)
 
     unsafe {
-        PINNACLE = Some((delay, touchpad_irq, pinnacle));
+        PINNACLE = Some((timer, touchpad_irq, pinnacle));
         pac::NVIC::unmask(pac::Interrupt::IO_IRQ_BANK0);
         pac::NVIC::unmask(pac::Interrupt::USBCTRL_IRQ);
     }
@@ -177,7 +178,7 @@ fn USBCTRL_IRQ() {
 
 #[interrupt]
 fn IO_IRQ_BANK0() {
-    let Some((delay, touchpad_irq, pinnacle)) = (unsafe { PINNACLE.as_mut() }) else {
+    let Some((timer, touchpad_irq, pinnacle)) = (unsafe { PINNACLE.as_mut() }) else {
         return;
     };
 
@@ -187,7 +188,7 @@ fn IO_IRQ_BANK0() {
 
     let data = pinnacle.read_relative().unwrap();
     touchpad_irq.clear_interrupt(Interrupt::EdgeHigh);
-    pinnacle.clear_flags(delay).unwrap();
+    pinnacle.clear_flags(&mut timer.count_down()).unwrap();
 
     cortex_m::interrupt::free(|cs| {
         let usb_dev = unsafe { USB_DEV.as_ref().unwrap().borrow(cs).borrow_mut() };
